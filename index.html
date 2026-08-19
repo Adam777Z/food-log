@@ -22,7 +22,7 @@
 					<i class="bi bi-book-half"></i> Food Log
 				</h1>
 				<div class="d-flex gap-2">
-					<button id="addDayBtn" class="btn btn-primary">
+					<button id="add_day_btn" class="btn btn-primary">
 						<i class="bi bi-calendar-plus"></i> Add Day
 					</button>
 					<button id="backup_btn" class="btn btn-info" title="Export data as JSON">
@@ -40,29 +40,29 @@
 		</header>
 
 		<!-- Search Section -->
-		<section class="mb-4 p-3 bg-white rounded shadow-sm">
+		<section id="search_section" class="mb-4 p-3 bg-white rounded shadow-sm">
 			<h5 class="mb-3">
 				<i class="bi bi-search"></i> Search Meals
 			</h5>
 			<div class="row g-3">
 				<div class="col-md-3">
-					<input type="date" id="searchDate" class="form-control" placeholder="Date">
+					<input type="date" id="search_date" class="form-control" placeholder="Date">
 				</div>
 				<div class="col-md-3">
-					<input type="text" id="searchMealName" class="form-control" placeholder="Meal name">
+					<input type="text" id="search_meal_name" class="form-control" placeholder="Meal name">
 				</div>
 				<div class="col-md-2">
-					<input type="number" id="searchCalories" class="form-control" placeholder="Calories (kcal)">
+					<input type="number" id="search_calories" class="form-control" placeholder="Calories (kcal)">
 				</div>
 				<div class="col-md-3">
-					<input type="text" id="searchNotes" class="form-control" placeholder="Notes">
+					<input type="text" id="search_notes" class="form-control" placeholder="Notes">
 				</div>
 			</div>
 			<div class="mt-2">
-				<button id="searchBtn" class="btn btn-sm btn-success">
+				<button id="search_btn" class="btn btn-sm btn-success">
 					<i class="bi bi-search"></i> Search
 				</button>
-				<button id="clearSearchBtn" class="btn btn-sm btn-secondary">
+				<button id="clear_search_btn" class="btn btn-sm btn-secondary">
 					<i class="bi bi-x"></i> Clear
 				</button>
 			</div>

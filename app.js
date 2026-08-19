@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Event Listeners Setup
 function setup_event_listeners() {
 	// Add Day Button
-	document.getElementById('addDayBtn').addEventListener('click', open_add_day_modal);
+	document.getElementById('add_day_btn').addEventListener('click', open_add_day_modal);
 
 	// Backup, Restore and Erase
 	document.getElementById('backup_btn').addEventListener('click', backup_data);
@@ -97,18 +97,18 @@ function setup_event_listeners() {
 	});
 
 	// Search
-	document.getElementById('searchBtn').addEventListener('click', perform_search);
-	document.getElementById('clearSearchBtn').addEventListener('click', clear_search);
-	document.getElementById('searchDate').addEventListener('keypress', (e) => {
+	document.getElementById('search_btn').addEventListener('click', perform_search);
+	document.getElementById('clear_search_btn').addEventListener('click', clear_search);
+	document.getElementById('search_date').addEventListener('keypress', (e) => {
 		if (e.key === 'Enter') perform_search();
 	});
-	document.getElementById('searchMealName').addEventListener('keypress', (e) => {
+	document.getElementById('search_meal_name').addEventListener('keypress', (e) => {
 		if (e.key === 'Enter') perform_search();
 	});
-	document.getElementById('searchCalories').addEventListener('keypress', (e) => {
+	document.getElementById('search_calories').addEventListener('keypress', (e) => {
 		if (e.key === 'Enter') perform_search();
 	});
-	document.getElementById('searchNotes').addEventListener('keypress', (e) => {
+	document.getElementById('search_notes').addEventListener('keypress', (e) => {
 		if (e.key === 'Enter') perform_search();
 	});
 }
@@ -714,10 +714,10 @@ async function update_meal_order(meals_list) {
 
 // Search Functionality
 async function perform_search() {
-	const date_filter = document.getElementById('searchDate').value;
-	const name_filter = document.getElementById('searchMealName').value.toLowerCase();
-	const calories_filter = document.getElementById('searchCalories').value;
-	const notes_filter = document.getElementById('searchNotes').value.toLowerCase();
+	const date_filter = document.getElementById('search_date').value;
+	const name_filter = document.getElementById('search_meal_name').value.toLowerCase();
+	const calories_filter = document.getElementById('search_calories').value;
+	const notes_filter = document.getElementById('search_notes').value.toLowerCase();
 
 	let results = await db.meals.toArray();
 
@@ -784,10 +784,10 @@ async function display_search_results(results) {
 
 // Clear Search
 function clear_search() {
-	document.getElementById('searchDate').value = '';
-	document.getElementById('searchMealName').value = '';
-	document.getElementById('searchCalories').value = '';
-	document.getElementById('searchNotes').value = '';
+	document.getElementById('search_date').value = '';
+	document.getElementById('search_meal_name').value = '';
+	document.getElementById('search_calories').value = '';
+	document.getElementById('search_notes').value = '';
 	search_active = false;
 	load_and_display_days();
 }

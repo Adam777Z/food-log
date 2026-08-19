@@ -235,7 +235,7 @@ header h1 {
 }
 
 /* Search Section */
-#searchSection {
+#search_section {
 	background: white;
 	border: 1px solid #dee2e6;
 }
@@ -316,12 +316,12 @@ header h1 {
 		justify-content: flex-end;
 	}
 
-	#searchSection .row {
+	#search_section .row {
 		gap: 1rem !important;
 	}
 
-	#searchSection input,
-	#searchSection select {
+	#search_section input,
+	#search_section select {
 		width: 100%;
 	}
 }
