@@ -270,6 +270,48 @@ header h1 {
 	box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
 }
 
+/* Inline Meal Form */
+.inline-meal-form {
+	background: #fff;
+	border: 2px solid var(--primary-color);
+	border-radius: 0.375rem;
+	margin-bottom: 0.75rem;
+	overflow: hidden;
+}
+
+.inline-meal-form-header {
+	background-color: var(--primary-color);
+	padding: 0.5rem 1rem;
+}
+
+.inline-meal-form-header h6 {
+	margin: 0;
+	color: black;
+	font-weight: 600;
+}
+
+.inline-meal-form-body {
+	padding: 0.75rem 1rem;
+}
+
+.inline-meal-form-body .form-label {
+	margin-bottom: 0.2rem;
+	font-weight: 500;
+	font-size: 0.85rem;
+}
+
+.inline-meal-form-actions {
+	display: flex;
+	gap: 0.5rem;
+	justify-content: flex-end;
+	padding: 0.5rem 1rem 0.75rem;
+}
+
+/* Hide meal item while editing inline */
+.meal-item.inline-editing {
+	display: none;
+}
+
 /* Buttons */
 .btn-primary {
 	background-color: var(--primary-color);

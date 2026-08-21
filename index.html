@@ -128,56 +128,7 @@
 		</div>
 	</div>
 
-	<!-- Add/Edit Meal Modal -->
-	<div class="modal fade" id="meal_modal" tabindex="-1" aria-hidden="true">
-		<div class="modal-dialog">
-			<div class="modal-content">
-				<div class="modal-header">
-					<h5 class="modal-title">
-						<i class="bi bi-plus-circle"></i> <span id="meal_modal_title">Add Meal</span>
-					</h5>
-					<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-				</div>
-				<div class="modal-body">
-					<form id="meal_form">
-						<div class="mb-3">
-							<label for="meal_name" class="form-label">Meal Name</label>
-							<input type="text" class="form-control" id="meal_name" placeholder="for example: drink 300 ml, soup 300 g, salt 1 g, water 300 ml" required>
-						</div>
-						<div class="mb-3">
-							<label for="meal_time" class="form-label">Time of Day</label>
-							<div class="input-group">
-								<select class="form-select" id="meal_time" required>
-									<option value="">Select time</option>
-									<option value="overnight">Overnight</option>
-									<option value="morning">Morning</option>
-									<option value="beforeNoon">Before Noon</option>
-									<option value="afternoon">Afternoon</option>
-									<option value="evening">Evening</option>
-									<option value="night">Night</option>
-									<option value="custom">Custom</option>
-								</select>
-							</div>
-							<input type="text" class="form-control mt-2" id="meal_time_custom"
-								placeholder="Enter custom time" style="display:none;">
-						</div>
-						<div class="mb-3">
-							<label for="meal_calories" class="form-label">Calories (kcal)</label>
-							<input type="number" class="form-control" id="meal_calories" min="0" step="0.1" required>
-						</div>
-						<div class="mb-3">
-							<label for="meal_notes" class="form-label">Notes</label>
-							<textarea class="form-control" id="meal_notes" rows="3"></textarea>
-						</div>
-					</form>
-				</div>
-				<div class="modal-footer">
-					<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-					<button type="button" class="btn btn-primary" id="save_meal_btn">Save Meal</button>
-				</div>
-			</div>
-		</div>
-	</div>
+
 
 	<!-- Dexie.js -->
 	<script src="https://cdn.jsdelivr.net/npm/dexie@3.2.4/dist/dexie.min.js"></script>

@@ -9,8 +9,6 @@ db.version(1).stores({
 });
 
 // Application State
-let current_editing_meal_id = null;
-let current_editing_day_id = null;
 let search_active = false;
 let current_editing_day_date = null;
 
@@ -59,36 +57,7 @@ function setup_event_listeners() {
 		save_edit_day_date();
 	});
 
-	// Meal Modal
-	document.getElementById('meal_time').addEventListener('change', toggle_custom_time_input);
-	document.getElementById('save_meal_btn').addEventListener('click', save_meal);
-
-	const handle_meal_enter = (e) => {
-		if (e.key === 'Enter') {
-			e.preventDefault();
-			save_meal();
-		}
-	};
-
-	document.getElementById('meal_name').addEventListener('keydown', handle_meal_enter);
-	document.getElementById('meal_calories').addEventListener('keydown', handle_meal_enter);
-	document.getElementById('meal_time').addEventListener('keydown', handle_meal_enter);
-	document.getElementById('meal_time_custom').addEventListener('keydown', handle_meal_enter);
-	document.getElementById('meal_notes').addEventListener('keydown', (e) => {
-		if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-			e.preventDefault();
-			save_meal();
-		}
-	});
-	document.getElementById('meal_form').addEventListener('submit', (e) => {
-		e.preventDefault();
-		save_meal();
-	});
-
 	// Auto focus inputs on modal show
-	document.getElementById('meal_modal').addEventListener('shown.bs.modal', () => {
-		document.getElementById('meal_name').focus();
-	});
 	document.getElementById('add_day_modal').addEventListener('shown.bs.modal', () => {
 		document.getElementById('add_day_date').focus();
 	});
@@ -223,14 +192,7 @@ async function erase_all_data() {
 	}
 }
 
-function toggle_custom_time_input() {
-	const time_select = document.getElementById('meal_time');
-	const custom_input = document.getElementById('meal_time_custom');
-	custom_input.style.display = time_select.value === 'custom' ? 'block' : 'none';
-	if (time_select.value === 'custom') {
-		custom_input.focus();
-	}
-}
+
 
 // Open Add Day Modal
 function open_add_day_modal() {
@@ -304,56 +266,176 @@ async function save_edit_day_date() {
 	load_and_display_days();
 }
 
-// Open Meal Modal
-function open_meal_modal(day_id, meal_id = null) {
-	current_editing_day_id = day_id;
-	current_editing_meal_id = meal_id;
+// Build inline meal form HTML
+function build_inline_meal_form_html(day_id, meal_id, meal) {
+	const is_edit = !!meal;
+	const title = is_edit ? 'Edit Meal' : 'Add Meal';
+	const name_val = is_edit ? escape_html(meal.name) : '';
+	const calories_val = is_edit ? meal.calories : '';
+	const notes_val = is_edit ? escape_html(meal.notes || '') : '';
 
-	const meal_modal = new bootstrap.Modal(document.getElementById('meal_modal'));
-	const form = document.getElementById('meal_form');
+	const time_options = [
+		{ value: '', label: 'Select time' },
+		{ value: 'overnight', label: 'Overnight' },
+		{ value: 'morning', label: 'Morning' },
+		{ value: 'beforeNoon', label: 'Before Noon' },
+		{ value: 'afternoon', label: 'Afternoon' },
+		{ value: 'evening', label: 'Evening' },
+		{ value: 'night', label: 'Night' },
+		{ value: 'custom', label: 'Custom' }
+	];
 
-	if (meal_id) {
-		// Edit mode
-		document.getElementById('meal_modal_title').textContent = 'Edit Meal';
-		load_meal_for_editing(meal_id);
-	} else {
-		// Add mode
-		document.getElementById('meal_modal_title').textContent = 'Add Meal';
-		form.reset();
-		document.getElementById('meal_time_custom').style.display = 'none';
+	let selected_time = '';
+	let custom_time_val = '';
+	let custom_time_display = 'none';
+	if (is_edit) {
+		if (['overnight', 'morning', 'beforeNoon', 'afternoon', 'evening', 'night'].includes(meal.time_of_day)) {
+			selected_time = meal.time_of_day;
+		} else {
+			selected_time = 'custom';
+			custom_time_val = escape_html(meal.time_of_day);
+			custom_time_display = 'block';
+		}
 	}
 
-	meal_modal.show();
+	const options_html = time_options.map(opt =>
+		`<option value="${opt.value}"${opt.value === selected_time ? ' selected' : ''}>${opt.label}</option>`
+	).join('');
+
+	return `
+		<div class="inline-meal-form" data-day-id="${day_id}" data-meal-id="${meal_id || ''}">
+			<div class="inline-meal-form-header">
+				<h6><i class="bi bi-${is_edit ? 'pencil' : 'plus-circle'}"></i> ${title}</h6>
+			</div>
+			<div class="inline-meal-form-body">
+				<div class="mb-2">
+					<label class="form-label form-label-sm">Meal Name</label>
+					<input type="text" class="form-control form-control-sm inline-meal-name" value="${name_val}" placeholder="for example: drink 300 ml, soup 300 g, salt 1 g, water 300 ml" required>
+				</div>
+				<div class="mb-2">
+					<label class="form-label form-label-sm">Time of Day</label>
+					<select class="form-select form-select-sm inline-meal-time" required>
+						${options_html}
+					</select>
+					<input type="text" class="form-control form-control-sm mt-1 inline-meal-time-custom" placeholder="Enter custom time" value="${custom_time_val}" style="display:${custom_time_display};">
+				</div>
+				<div class="mb-2">
+					<label class="form-label form-label-sm">Calories (kcal)</label>
+					<input type="number" class="form-control form-control-sm inline-meal-calories" min="0" step="0.1" value="${calories_val}" required>
+				</div>
+				<div class="mb-2">
+					<label class="form-label form-label-sm">Notes</label>
+					<textarea class="form-control form-control-sm inline-meal-notes" rows="2">${notes_val}</textarea>
+				</div>
+			</div>
+			<div class="inline-meal-form-actions">
+				<button type="button" class="btn btn-sm btn-secondary inline-meal-cancel-btn">Cancel</button>
+				<button type="button" class="btn btn-sm btn-primary inline-meal-save-btn">Save Meal</button>
+			</div>
+		</div>
+	`;
 }
 
-// Load Meal for Editing
-async function load_meal_for_editing(meal_id) {
-	const meal = await db.meals.get(meal_id);
-	if (meal) {
-		document.getElementById('meal_name').value = meal.name;
-		document.getElementById('meal_calories').value = meal.calories;
-		document.getElementById('meal_notes').value = meal.notes || '';
+// Close any currently open inline meal form
+function close_inline_meal_form() {
+	const existing = document.querySelector('.inline-meal-form');
+	if (existing) {
+		// If editing, restore the original meal item that was hidden
+		const meal_id = existing.dataset.mealId;
+		if (meal_id) {
+			const hidden_item = document.querySelector(`.meal-item[data-meal-id="${meal_id}"].inline-editing`);
+			if (hidden_item) {
+				hidden_item.classList.remove('inline-editing');
+			}
+		}
+		existing.remove();
+	}
+}
 
-		// Handle time of day
-		const time_select = document.getElementById('meal_time');
-		if (['overnight', 'morning', 'beforeNoon', 'afternoon', 'evening', 'night'].includes(meal.time_of_day)) {
-			time_select.value = meal.time_of_day;
-			document.getElementById('meal_time_custom').style.display = 'none';
-		} else {
-			time_select.value = 'custom';
-			document.getElementById('meal_time_custom').style.display = 'block';
-			document.getElementById('meal_time_custom').value = meal.time_of_day;
+// Wire up event listeners on an inline meal form
+function setup_inline_meal_form_events(form_el) {
+	const time_select = form_el.querySelector('.inline-meal-time');
+	const custom_input = form_el.querySelector('.inline-meal-time-custom');
+	const save_btn = form_el.querySelector('.inline-meal-save-btn');
+	const cancel_btn = form_el.querySelector('.inline-meal-cancel-btn');
+	const name_input = form_el.querySelector('.inline-meal-name');
+	const calories_input = form_el.querySelector('.inline-meal-calories');
+	const notes_input = form_el.querySelector('.inline-meal-notes');
+
+	time_select.addEventListener('change', () => {
+		custom_input.style.display = time_select.value === 'custom' ? 'block' : 'none';
+		if (time_select.value === 'custom') custom_input.focus();
+	});
+
+	const handle_enter = (e) => {
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			save_inline_meal(form_el);
+		}
+	};
+
+	name_input.addEventListener('keydown', handle_enter);
+	calories_input.addEventListener('keydown', handle_enter);
+	time_select.addEventListener('keydown', handle_enter);
+	custom_input.addEventListener('keydown', handle_enter);
+	notes_input.addEventListener('keydown', (e) => {
+		if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+			e.preventDefault();
+			save_inline_meal(form_el);
+		}
+	});
+
+	save_btn.addEventListener('click', () => save_inline_meal(form_el));
+	cancel_btn.addEventListener('click', () => close_inline_meal_form());
+
+	// Focus the name input
+	setTimeout(() => name_input.focus(), 0);
+}
+
+// Open inline meal form (add or edit)
+async function open_inline_meal_form(day_id, meal_id = null) {
+	// Close any existing inline form first
+	close_inline_meal_form();
+
+	let meal = null;
+	if (meal_id) {
+		meal = await db.meals.get(meal_id);
+	}
+
+	const form_html = build_inline_meal_form_html(day_id, meal_id, meal);
+
+	if (meal_id) {
+		// Edit mode: insert form right after the meal item, hide the meal item
+		const meal_item = document.querySelector(`.meal-item[data-meal-id="${meal_id}"]`);
+		if (meal_item) {
+			meal_item.classList.add('inline-editing');
+			meal_item.insertAdjacentHTML('afterend', form_html);
+			const form_el = meal_item.nextElementSibling;
+			setup_inline_meal_form_events(form_el);
+		}
+	} else {
+		// Add mode: find the day card and insert before the day-actions
+		const add_btn = document.querySelector(`.add-meal-btn[data-day-id="${day_id}"]`);
+		if (add_btn) {
+			const day_actions = add_btn.closest('.day-actions');
+			day_actions.insertAdjacentHTML('beforebegin', form_html);
+			const form_el = day_actions.previousElementSibling;
+			setup_inline_meal_form_events(form_el);
 		}
 	}
 }
 
-// Save Meal
-async function save_meal() {
-	const name = document.getElementById('meal_name').value;
-	const calories = parseFloat(document.getElementById('meal_calories').value);
-	const notes = document.getElementById('meal_notes').value;
-	const time_select = document.getElementById('meal_time').value;
-	const time_of_day = time_select === 'custom' ? document.getElementById('meal_time_custom').value : time_select;
+// Save Meal from inline form
+async function save_inline_meal(form_el) {
+	const day_id = parseInt(form_el.dataset.dayId);
+	const meal_id_str = form_el.dataset.mealId;
+	const meal_id = meal_id_str ? parseInt(meal_id_str) : null;
+
+	const name = form_el.querySelector('.inline-meal-name').value;
+	const calories = parseFloat(form_el.querySelector('.inline-meal-calories').value);
+	const notes = form_el.querySelector('.inline-meal-notes').value;
+	const time_select = form_el.querySelector('.inline-meal-time').value;
+	const time_of_day = time_select === 'custom' ? form_el.querySelector('.inline-meal-time-custom').value : time_select;
 
 	if (!name || !time_select || isNaN(calories)) {
 		alert('Please fill in all required fields');
@@ -365,11 +447,11 @@ async function save_meal() {
 		return;
 	}
 
-	const day = await db.days.get(current_editing_day_id);
+	const day = await db.days.get(day_id);
 	const meal_date = day ? day.date : new Date().toISOString().split('T')[0];
 
 	const meal_data = {
-		day_id: current_editing_day_id,
+		day_id: day_id,
 		name,
 		time_of_day,
 		calories,
@@ -378,16 +460,15 @@ async function save_meal() {
 		updated_at: new Date().toISOString()
 	};
 
-	if (current_editing_meal_id) {
+	if (meal_id) {
 		// Update existing meal
-		await db.meals.update(current_editing_meal_id, meal_data);
+		await db.meals.update(meal_id, meal_data);
 	} else {
 		// Add new meal
 		meal_data.created_at = new Date().toISOString();
 		await db.meals.add(meal_data);
 	}
 
-	bootstrap.Modal.getInstance(document.getElementById('meal_modal')).hide();
 	load_and_display_days();
 }
 
@@ -592,7 +673,7 @@ function create_day_element(day, meals) {
 
 		// Add meal button
 		day_element.querySelector('.add-meal-btn')?.addEventListener('click', (e) => {
-			open_meal_modal(parseInt(e.currentTarget.dataset.dayId));
+			open_inline_meal_form(parseInt(e.currentTarget.dataset.dayId));
 		});
 
 		// Edit day date button
@@ -616,7 +697,7 @@ function create_day_element(day, meals) {
 		// Edit meal buttons
 		day_element.querySelectorAll('.edit-meal-btn').forEach(btn => {
 			btn.addEventListener('click', (e) => {
-				open_meal_modal(day.id, parseInt(e.currentTarget.dataset.mealId));
+				open_inline_meal_form(day.id, parseInt(e.currentTarget.dataset.mealId));
 			});
 		});
 
