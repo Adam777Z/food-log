@@ -1,0 +1,22 @@
+{
+	"name": "Food Log",
+	"short_name": "Food Log",
+	"description": "Food Log.",
+	"icons": [
+		{
+			"src": "assets/images/icon.png",
+			"sizes": "512x512",
+			"type": "image/png"
+		},
+		{
+			"src": "assets/images/icon-192x192.png",
+			"sizes": "192x192",
+			"type": "image/png"
+		}
+	],
+	"lang": "en-US",
+	"start_url": "/food-log/",
+	"display": "standalone",
+	"theme_color": "#fff",
+	"background_color": "#fff"
+}

@@ -44,18 +44,35 @@ header h1 {
 	align-items: center;
 }
 
+.day-header > div {
+	width: 100%;
+}
+
 .day-header h5 {
 	margin: 0;
 	color: black;
 	font-weight: 600;
 }
 
+.day-totals-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem;
+	margin-top: 0.4rem;
+	width: 100%;
+}
+
 .day-totals-summary {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 0.4rem;
-	margin-top: 0.4rem;
 	align-items: center;
+}
+
+.edit-day-notes-btn {
+	flex-shrink: 0;
+	margin-left: auto;
 }
 
 .day-total-badge {
@@ -300,6 +317,12 @@ header h1 {
 	font-size: 0.85rem;
 }
 
+.inline-meal-notes {
+	min-height: calc(1.5em * 2 + 0.5rem + 2px);
+	resize: vertical;
+	box-sizing: border-box;
+}
+
 .inline-meal-form-actions {
 	display: flex;
 	gap: 0.5rem;
@@ -310,6 +333,48 @@ header h1 {
 /* Hide meal item while editing inline */
 .meal-item.inline-editing {
 	display: none;
+}
+
+/* Day notes text */
+.day-notes-text {
+	margin-top: 0.5rem;
+	font-size: 0.875rem;
+	color: rgba(0, 0, 0, 0.75);
+	background: rgba(255, 255, 255, 0.25);
+	border-left: 3px solid rgba(0, 0, 0, 0.2);
+	padding: 0.35rem 0.6rem;
+	border-radius: 0 0.25rem 0.25rem 0;
+	white-space: pre-wrap;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+/* Inline day notes form */
+.inline-day-notes-form {
+	margin-top: 0.5rem;
+	width: 100%;
+}
+
+.inline-day-notes-form-inner {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4rem;
+	width: 100%;
+}
+
+.inline-day-notes-textarea {
+	min-height: calc(1.5em * 2 + 0.5rem + 2px);
+	resize: vertical;
+	background: rgba(255, 255, 255, 0.9);
+	border-color: rgba(0, 0, 0, 0.2);
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.inline-day-notes-actions {
+	display: flex;
+	gap: 0.4rem;
+	justify-content: flex-end;
 }
 
 /* Buttons */
