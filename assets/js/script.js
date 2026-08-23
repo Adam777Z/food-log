@@ -1,6 +1,3 @@
-// Food Log Application
-// Database setup using Dexie.js with snake_case naming convention
-
 const db = new Dexie('FoodLogDB');
 
 db.version(2).stores({
