@@ -7,6 +7,7 @@ Features:
 - Total (calculated) water & salt for meals
 - Reorder meals within a day
 - Daily totals of kcal, water, salt
+- Data stored locally (IndexedDB)
 - Backup/restore/erase data
 
 ## Credits
