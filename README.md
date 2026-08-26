@@ -8,3 +8,6 @@ Features:
 - Reorder meals within a day
 - Daily totals of kcal, water, salt
 - Backup/restore/erase data
+
+## Credits
+- Icon from [Bootstrap Icons](https://icons.getbootstrap.com/) v1.6.1 ([app](https://icons.getbootstrap.com/icons/app/))
