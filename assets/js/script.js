@@ -540,7 +540,10 @@ async function save_inline_meal(form_el) {
 		// Update existing meal
 		await db.meals.update(meal_id, meal_data);
 	} else {
-		// Add new meal
+		// Add new meal with order at the end
+		const existing_meals = await db.meals.where('day_id').equals(day_id).toArray();
+		const max_order = existing_meals.reduce((max, m) => (typeof m.order === 'number' ? Math.max(max, m.order) : max), -1);
+		meal_data.order = max_order + 1;
 		meal_data.created_at = new Date().toISOString();
 		await db.meals.add(meal_data);
 	}
@@ -584,7 +587,17 @@ async function duplicate_meal(meal_id) {
 		delete new_meal.id;
 		new_meal.created_at = new Date().toISOString();
 		new_meal.updated_at = new Date().toISOString();
+		new_meal.order = (typeof meal.order === 'number' ? meal.order : 0) + 0.5;
 		await db.meals.add(new_meal);
+
+		// Re-normalize orders for this day
+		const day_meals = await db.meals.where('day_id').equals(meal.day_id).toArray();
+		day_meals.sort((a, b) => {
+			const oa = typeof a.order === 'number' ? a.order : a.id;
+			const ob = typeof b.order === 'number' ? b.order : b.id;
+			return oa - ob;
+		});
+		await Promise.all(day_meals.map((m, idx) => db.meals.update(m.id, { order: idx })));
 
 		if (search_active) {
 			await perform_search();
@@ -611,6 +624,12 @@ async function duplicate_day(day_id) {
 	const meals = await db.meals.where('day_id').equals(day_id).toArray();
 
 	if (day) {
+		meals.sort((a, b) => {
+			const oa = typeof a.order === 'number' ? a.order : a.id;
+			const ob = typeof b.order === 'number' ? b.order : b.id;
+			return oa - ob;
+		});
+
 		// Create new day with tomorrow's date
 		const next_date = new Date(day.date);
 		next_date.setDate(next_date.getDate() + 1);
@@ -624,11 +643,13 @@ async function duplicate_day(day_id) {
 		});
 
 		// Duplicate all meals from original day
-		for (const meal of meals) {
+		for (let i = 0; i < meals.length; i++) {
+			const meal = meals[i];
 			const new_meal = { ...meal };
 			delete new_meal.id;
 			new_meal.day_id = new_day_id;
 			new_meal.date = new_date_string;
+			new_meal.order = i;
 			new_meal.created_at = new Date().toISOString();
 			new_meal.updated_at = new Date().toISOString();
 			await db.meals.add(new_meal);
@@ -661,6 +682,11 @@ async function load_and_display_days() {
 	container.innerHTML = '';
 	for (const day of days) {
 		const meals = await db.meals.where('day_id').equals(day.id).toArray();
+		meals.sort((a, b) => {
+			const oa = typeof a.order === 'number' ? a.order : a.id;
+			const ob = typeof b.order === 'number' ? b.order : b.id;
+			return oa - ob;
+		});
 		const day_element = create_day_element(day, meals);
 		container.appendChild(day_element);
 	}
@@ -928,6 +954,37 @@ async function save_day_notes(day_id, form_el) {
 	restore_open_meal_forms_state(other_open_forms);
 }
 
+// Helper to find meal element below cursor Y
+function get_drag_after_element(container, y) {
+	const draggable_elements = [...container.querySelectorAll('.meal-item')].filter(el => el !== active_dragged_item);
+
+	return draggable_elements.reduce((closest, child) => {
+		const box = child.getBoundingClientRect();
+		const offset = y - box.top - box.height / 2;
+		if (offset < 0 && offset > closest.offset) {
+			return { offset: offset, element: child };
+		} else {
+			return closest;
+		}
+	}, { offset: Number.NEGATIVE_INFINITY }).element;
+}
+
+// Update meal number badges (1, 2, 3...)
+function update_meal_numbers(meals_list) {
+	const items = meals_list.querySelectorAll('.meal-item');
+	items.forEach((item, index) => {
+		const num_el = item.querySelector('.meal-number');
+		if (num_el) {
+			num_el.textContent = (index + 1).toString();
+		}
+	});
+}
+
+// Shared drag and drop state
+let active_dragged_item = null;
+let active_dragged_day_id = null;
+let active_placeholder = null;
+
 // Setup Drag and Drop
 function setup_drag_and_drop(day_element) {
 	const meals_list = day_element.querySelector('.meals-list');
@@ -937,63 +994,100 @@ function setup_drag_and_drop(day_element) {
 
 	meal_items.forEach(item => {
 		item.addEventListener('dragstart', (e) => {
+			// Do not initiate drag when interacting with action buttons or inputs
+			if (e.target.closest('button, input, textarea, select, .meal-actions')) {
+				e.preventDefault();
+				return;
+			}
+
+			active_dragged_item = item;
+			active_dragged_day_id = meals_list.dataset.dayId;
+
 			e.dataTransfer.effectAllowed = 'move';
-			e.dataTransfer.setData('text/html', e.currentTarget.innerHTML);
-			e.currentTarget.classList.add('dragging');
-		});
+			e.dataTransfer.setData('text/plain', item.dataset.mealId);
 
-		item.addEventListener('dragend', (e) => {
-			e.currentTarget.classList.remove('dragging');
-			meal_items.forEach(mi => mi.classList.remove('drag-over'));
-		});
+			// Create dashed rectangle drop target placeholder
+			active_placeholder = document.createElement('li');
+			active_placeholder.className = 'meal-drop-target';
+			active_placeholder.style.height = `${item.offsetHeight}px`;
 
-		item.addEventListener('dragover', (e) => {
-			e.preventDefault();
-			e.dataTransfer.dropEffect = 'move';
-			if (e.currentTarget !== e.target.closest('.meal-item')) {
-				e.currentTarget.closest('.meal-item')?.classList.add('drag-over');
-			}
-		});
-
-		item.addEventListener('dragleave', (e) => {
-			if (e.currentTarget === e.target.closest('.meal-item')) {
-				e.currentTarget.classList.remove('drag-over');
-			}
-		});
-
-		item.addEventListener('drop', async (e) => {
-			e.preventDefault();
-			const dragged_item = meals_list.querySelector('.dragging');
-			const target_item = e.currentTarget.closest('.meal-item');
-
-			if (dragged_item && target_item && dragged_item !== target_item) {
-				const dragged_index = Array.from(meal_items).indexOf(dragged_item);
-				const target_index = Array.from(meal_items).indexOf(target_item);
-
-				// Reorder in DOM
-				if (dragged_index < target_index) {
-					target_item.parentNode.insertBefore(dragged_item, target_item.nextSibling);
-				} else {
-					target_item.parentNode.insertBefore(dragged_item, target_item);
+			setTimeout(() => {
+				if (active_dragged_item === item) {
+					item.classList.add('dragging');
 				}
-
-				// Update database order
-				await update_meal_order(meals_list);
-			}
-			e.currentTarget.classList.remove('drag-over');
+			}, 0);
 		});
+
+		item.addEventListener('dragend', () => {
+			item.classList.remove('dragging');
+			if (active_placeholder && active_placeholder.parentNode) {
+				active_placeholder.remove();
+			}
+			active_dragged_item = null;
+			active_dragged_day_id = null;
+			active_placeholder = null;
+		});
+	});
+
+	meals_list.addEventListener('dragover', (e) => {
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'move';
+
+		if (!active_dragged_item || !active_placeholder) return;
+		if (meals_list.dataset.dayId !== active_dragged_day_id) return;
+
+		const after_element = get_drag_after_element(meals_list, e.clientY);
+		if (after_element == null) {
+			if (active_placeholder.nextElementSibling !== null || active_placeholder.parentNode !== meals_list) {
+				meals_list.appendChild(active_placeholder);
+			}
+		} else {
+			if (active_placeholder.nextElementSibling !== after_element) {
+				meals_list.insertBefore(active_placeholder, after_element);
+			}
+		}
+	});
+
+	meals_list.addEventListener('dragleave', (e) => {
+		if (!meals_list.contains(e.relatedTarget)) {
+			if (active_placeholder && active_placeholder.parentNode === meals_list) {
+				active_placeholder.remove();
+			}
+		}
+	});
+
+	meals_list.addEventListener('drop', async (e) => {
+		e.preventDefault();
+		if (!active_dragged_item || meals_list.dataset.dayId !== active_dragged_day_id) {
+			if (active_placeholder) active_placeholder.remove();
+			return;
+		}
+
+		if (active_placeholder && active_placeholder.parentNode === meals_list) {
+			meals_list.insertBefore(active_dragged_item, active_placeholder);
+			active_placeholder.remove();
+		}
+
+		active_dragged_item.classList.remove('dragging');
+		update_meal_numbers(meals_list);
+		await update_meal_order(meals_list);
+
+		active_dragged_item = null;
+		active_dragged_day_id = null;
+		active_placeholder = null;
 	});
 }
 
 // Update Meal Order
 async function update_meal_order(meals_list) {
-	const day_id = parseInt(meals_list.dataset.dayId);
 	const meal_items = meals_list.querySelectorAll('.meal-item');
 
 	const updates = [];
 	meal_items.forEach((item, index) => {
 		const meal_id = parseInt(item.dataset.mealId);
-		updates.push(db.meals.update(meal_id, { order: index }));
+		if (!isNaN(meal_id)) {
+			updates.push(db.meals.update(meal_id, { order: index }));
+		}
 	});
 
 	await Promise.all(updates);
@@ -1060,6 +1154,11 @@ async function display_search_results(results) {
 
 	container.innerHTML = '';
 	for (const day_id in grouped_by_day) {
+		grouped_by_day[day_id].sort((a, b) => {
+			const oa = typeof a.order === 'number' ? a.order : a.id;
+			const ob = typeof b.order === 'number' ? b.order : b.id;
+			return oa - ob;
+		});
 		const day_id_num = parseInt(day_id);
 		const day = await db.days.get(day_id_num);
 		if (day) {
