@@ -150,6 +150,7 @@ header h1 {
 	padding: 0.5rem;
 	font-size: 1.25rem;
 	user-select: none;
+	-webkit-user-select: none;
 	flex-shrink: 0;
 }
 
@@ -168,11 +169,15 @@ header h1 {
 	justify-content: center;
 	font-weight: bold;
 	flex-shrink: 0;
+	user-select: none;
+	-webkit-user-select: none;
 }
 
 .meal-details {
 	flex: 1;
 	min-width: 0;
+	user-select: text;
+	-webkit-user-select: text;
 }
 
 .meal-name {
@@ -239,6 +244,8 @@ header h1 {
 	display: flex;
 	gap: 0.5rem;
 	flex-shrink: 0;
+	user-select: none;
+	-webkit-user-select: none;
 }
 
 .meal-actions .btn {

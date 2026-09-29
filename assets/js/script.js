@@ -20,6 +20,16 @@ function setup_event_listeners() {
 	// Add Day Button
 	document.getElementById('add_day_btn').addEventListener('click', open_add_day_modal);
 
+	// Global drag cleanup: reset any draggable meal items if pointer/mouse released without dragging
+	const cleanup_draggable_items = () => {
+		if (!active_dragged_item) {
+			document.querySelectorAll('.meal-item[draggable="true"]').forEach(el => el.removeAttribute('draggable'));
+		}
+	};
+	window.addEventListener('pointerup', cleanup_draggable_items);
+	window.addEventListener('mouseup', cleanup_draggable_items);
+	window.addEventListener('blur', cleanup_draggable_items);
+
 	// Backup, Restore and Erase
 	document.getElementById('backup_btn').addEventListener('click', backup_data);
 	document.getElementById('restore_btn').addEventListener('click', () => {
@@ -723,7 +733,7 @@ function create_day_element(day, meals) {
 			const meal_salt = extract_salt_amount(meal.name) || extract_salt_amount(meal.notes || '');
 
 			meals_html += `
-				<li class="meal-item" draggable="true" data-meal-id="${meal.id}">
+				<li class="meal-item" data-meal-id="${meal.id}">
 					<div class="drag-handle" title="Drag to reorder">
 						<i class="bi bi-grip-vertical"></i>
 					</div>
@@ -993,10 +1003,38 @@ function setup_drag_and_drop(day_element) {
 	const meal_items = meals_list.querySelectorAll('.meal-item');
 
 	meal_items.forEach(item => {
+		const handle = item.querySelector('.drag-handle');
+
+		if (handle) {
+			const enable_drag = (e) => {
+				// Only initiate drag on primary (left) button click
+				if (e.button === 0) {
+					item.setAttribute('draggable', 'true');
+				}
+			};
+
+			const disable_drag = () => {
+				if (!active_dragged_item) {
+					item.removeAttribute('draggable');
+				}
+			};
+
+			handle.addEventListener('pointerdown', enable_drag);
+			handle.addEventListener('mousedown', enable_drag);
+			handle.addEventListener('pointerup', disable_drag);
+			handle.addEventListener('mouseup', disable_drag);
+		}
+
 		item.addEventListener('dragstart', (e) => {
+			// Only allow drag if initiated via the drag handle
+			if (!item.hasAttribute('draggable') || item.getAttribute('draggable') !== 'true') {
+				return;
+			}
+
 			// Do not initiate drag when interacting with action buttons or inputs
 			if (e.target.closest('button, input, textarea, select, .meal-actions')) {
 				e.preventDefault();
+				item.removeAttribute('draggable');
 				return;
 			}
 
@@ -1020,6 +1058,7 @@ function setup_drag_and_drop(day_element) {
 
 		item.addEventListener('dragend', () => {
 			item.classList.remove('dragging');
+			item.removeAttribute('draggable');
 			if (active_placeholder && active_placeholder.parentNode) {
 				active_placeholder.remove();
 			}
@@ -1069,6 +1108,7 @@ function setup_drag_and_drop(day_element) {
 		}
 
 		active_dragged_item.classList.remove('dragging');
+		active_dragged_item.removeAttribute('draggable');
 		update_meal_numbers(meals_list);
 		await update_meal_order(meals_list);
 
