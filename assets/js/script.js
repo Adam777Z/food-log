@@ -339,7 +339,7 @@ function build_inline_meal_form_html(day_id, meal_id, meal_or_data) {
 	const is_edit = !!meal_id;
 	const title = is_edit ? 'Edit Meal' : 'Add Meal';
 	const name_val = meal_or_data ? escape_html(meal_or_data.name || '') : '';
-	const calories_val = meal_or_data && meal_or_data.calories !== undefined && meal_or_data.calories !== '' ? meal_or_data.calories : '';
+	const calories_val = meal_or_data && meal_or_data.calories !== undefined && meal_or_data.calories !== null && meal_or_data.calories !== '' ? meal_or_data.calories : '';
 	const notes_val = meal_or_data ? escape_html(meal_or_data.notes || '') : '';
 
 	const time_options = [
@@ -396,7 +396,7 @@ function build_inline_meal_form_html(day_id, meal_id, meal_or_data) {
 				</div>
 				<div class="mb-2">
 					<label class="form-label form-label-sm">Calories (kcal)</label>
-					<input type="number" class="form-control form-control-sm inline-meal-calories" min="0" step="0.1" value="${calories_val}" required>
+					<input type="number" class="form-control form-control-sm inline-meal-calories" min="0" step="0.1" value="${calories_val}" placeholder="Optional">
 				</div>
 				<div class="mb-2">
 					<label class="form-label form-label-sm">Notes</label>
@@ -580,15 +580,25 @@ async function save_inline_meal(form_el) {
 	const meal_id_str = form_el.dataset.mealId;
 	const meal_id = meal_id_str ? parseInt(meal_id_str) : null;
 
-	const name = form_el.querySelector('.inline-meal-name').value;
-	const calories = parseFloat(form_el.querySelector('.inline-meal-calories').value);
+	const name = form_el.querySelector('.inline-meal-name').value.trim();
+	const calories_raw = form_el.querySelector('.inline-meal-calories').value.trim();
 	const notes = form_el.querySelector('.inline-meal-notes').value;
 	const time_select = form_el.querySelector('.inline-meal-time').value;
 	const time_of_day = time_select === 'custom' ? form_el.querySelector('.inline-meal-time-custom').value : time_select;
 
-	if (!name || !time_select || isNaN(calories)) {
+	if (!name || !time_select) {
 		alert('Please fill in all required fields');
 		return;
+	}
+
+	let calories = null;
+	if (calories_raw !== '') {
+		const parsed_calories = parseFloat(calories_raw);
+		if (isNaN(parsed_calories) || parsed_calories < 0) {
+			alert('Please enter a valid calorie amount');
+			return;
+		}
+		calories = parsed_calories;
 	}
 
 	if (time_select === 'custom' && !time_of_day) {
@@ -800,7 +810,10 @@ function create_day_element(day, meals) {
 
 	const date_obj = new Date(day.date);
 	const date_string = date_obj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-	const total_calories = meals.reduce((sum, meal) => sum + (meal.calories || 0), 0);
+	const total_calories = meals.reduce((sum, meal) => {
+		const cal = (meal.calories !== null && meal.calories !== undefined && meal.calories !== '') ? Number(meal.calories) : 0;
+		return sum + (isNaN(cal) ? 0 : cal);
+	}, 0);
 	const formatted_calories = total_calories % 1 === 0 ? total_calories : total_calories.toFixed(2);
 
 	const total_water = meals.reduce((sum, meal) => sum + (extract_water_amount(meal.name) || extract_water_amount(meal.notes || '')), 0);
@@ -834,8 +847,10 @@ function create_day_element(day, meals) {
 						<div class="meal-info">
 							<span class="meal-info-label">Time:</span>
 							<span>${escape_html(time_display)}</span>
-							<span class="meal-info-label">Calories:</span>
-							<span class="meal-calories">${meal.calories} kcal</span>
+							${meal.calories !== null && meal.calories !== undefined && meal.calories !== '' ? `
+								<span class="meal-info-label">Calories:</span>
+								<span class="meal-calories">${meal.calories} kcal</span>
+							` : ''}
 							${meal_water > 0 ? `
 								<span class="meal-info-label">Water:</span>
 								<span class="meal-water">${format_water_amount(meal_water)}</span>
