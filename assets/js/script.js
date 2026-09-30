@@ -9,6 +9,30 @@ db.version(2).stores({
 let search_active = false;
 let current_editing_day_date = null;
 
+// Helper to get current window scroll position
+function get_current_scroll_position() {
+	return {
+		x: window.scrollX || window.pageXOffset || document.documentElement.scrollLeft || 0,
+		y: window.scrollY || window.pageYOffset || document.documentElement.scrollTop || 0
+	};
+}
+
+// Helper to restore window scroll position reliably
+function restore_scroll_position(pos) {
+	if (!pos) return;
+	const do_restore = () => {
+		window.scrollTo({
+			left: pos.x,
+			top: pos.y,
+			behavior: 'instant'
+		});
+	};
+	do_restore();
+	requestAnimationFrame(do_restore);
+	setTimeout(do_restore, 50);
+	setTimeout(do_restore, 150);
+}
+
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
 	setup_event_listeners();
@@ -64,12 +88,26 @@ function setup_event_listeners() {
 		save_edit_day_date();
 	});
 
-	// Auto focus inputs on modal show
+	// Auto focus inputs on modal show without jumping scroll
 	document.getElementById('add_day_modal').addEventListener('shown.bs.modal', () => {
-		document.getElementById('add_day_date').focus();
+		document.getElementById('add_day_date').focus({ preventScroll: true });
 	});
 	document.getElementById('edit_day_modal').addEventListener('shown.bs.modal', () => {
-		document.getElementById('edit_day_date').focus();
+		document.getElementById('edit_day_date').focus({ preventScroll: true });
+	});
+
+	// Prevent modal focus restoration from jumping scroll position
+	['add_day_modal', 'edit_day_modal'].forEach(modal_id => {
+		const modal_el = document.getElementById(modal_id);
+		modal_el.addEventListener('hide.bs.modal', () => {
+			const modal_instance = bootstrap.Modal.getInstance(modal_el);
+			if (modal_instance) {
+				modal_instance._focussedElement = null;
+			}
+			if (document.activeElement && document.activeElement !== document.body) {
+				document.activeElement.blur();
+			}
+		});
 	});
 
 	// Search
@@ -211,6 +249,7 @@ function open_add_day_modal() {
 
 // Save New Day
 async function save_new_day() {
+	const scroll_pos = get_current_scroll_position();
 	const date_string = document.getElementById('add_day_date').value;
 
 	if (!date_string) {
@@ -231,8 +270,18 @@ async function save_new_day() {
 		created_at: new Date().toISOString()
 	});
 
-	bootstrap.Modal.getInstance(document.getElementById('add_day_modal')).hide();
-	load_and_display_days();
+	const modal_el = document.getElementById('add_day_modal');
+	const modal_instance = bootstrap.Modal.getInstance(modal_el);
+	if (modal_instance) {
+		modal_instance._focussedElement = null;
+		modal_instance.hide();
+	}
+	if (document.activeElement && document.activeElement !== document.body) {
+		document.activeElement.blur();
+	}
+
+	await load_and_display_days();
+	restore_scroll_position(scroll_pos);
 }
 
 // Open Edit Day Date Modal
@@ -249,6 +298,7 @@ function open_edit_day_modal(day_id, current_date) {
 
 // Save Edited Day Date
 async function save_edit_day_date() {
+	const scroll_pos = get_current_scroll_position();
 	const day_id = parseInt(document.getElementById('edit_day_modal').dataset.dayId);
 	const new_date = document.getElementById('edit_day_date').value;
 
@@ -270,8 +320,18 @@ async function save_edit_day_date() {
 	// Update all meals for this day
 	await db.meals.where('day_id').equals(day_id).modify({ date: new_date });
 
-	bootstrap.Modal.getInstance(document.getElementById('edit_day_modal')).hide();
-	load_and_display_days();
+	const modal_el = document.getElementById('edit_day_modal');
+	const modal_instance = bootstrap.Modal.getInstance(modal_el);
+	if (modal_instance) {
+		modal_instance._focussedElement = null;
+		modal_instance.hide();
+	}
+	if (document.activeElement && document.activeElement !== document.body) {
+		document.activeElement.blur();
+	}
+
+	await load_and_display_days();
+	restore_scroll_position(scroll_pos);
 }
 
 // Build inline meal form HTML
@@ -325,7 +385,7 @@ function build_inline_meal_form_html(day_id, meal_id, meal_or_data) {
 			<div class="inline-meal-form-body">
 				<div class="mb-2">
 					<label class="form-label form-label-sm">Meal Name</label>
-					<input type="text" class="form-control form-control-sm inline-meal-name" value="${name_val}" placeholder="for example: drink 300 ml, soup 300 g, salt 1 g, water 300 ml" required>
+					<input type="text" class="form-control form-control-sm inline-meal-name" value="${name_val}" placeholder="For example: drink 300 ml, soup 300 g, salt 1 g, water 300 ml" required>
 				</div>
 				<div class="mb-2">
 					<label class="form-label form-label-sm">Time of Day</label>
@@ -384,7 +444,7 @@ function restore_open_meal_forms_state(states) {
 				meal_item.classList.add('inline-editing');
 				meal_item.insertAdjacentHTML('afterend', form_html);
 				const form_el = meal_item.nextElementSibling;
-				setup_inline_meal_form_events(form_el);
+				setup_inline_meal_form_events(form_el, false);
 			}
 		} else {
 			const add_btn = document.querySelector(`.add-meal-btn[data-day-id="${state.day_id}"]`);
@@ -392,7 +452,7 @@ function restore_open_meal_forms_state(states) {
 				const day_actions = add_btn.closest('.day-actions');
 				day_actions.insertAdjacentHTML('beforebegin', form_html);
 				const form_el = day_actions.previousElementSibling;
-				setup_inline_meal_form_events(form_el);
+				setup_inline_meal_form_events(form_el, false);
 			}
 		}
 	});
@@ -417,7 +477,7 @@ function close_inline_meal_form(form_el = null) {
 }
 
 // Wire up event listeners on an inline meal form
-function setup_inline_meal_form_events(form_el) {
+function setup_inline_meal_form_events(form_el, auto_focus = true) {
 	const time_select = form_el.querySelector('.inline-meal-time');
 	const custom_input = form_el.querySelector('.inline-meal-time-custom');
 	const save_btn = form_el.querySelector('.inline-meal-save-btn');
@@ -428,7 +488,7 @@ function setup_inline_meal_form_events(form_el) {
 
 	time_select.addEventListener('change', () => {
 		custom_input.style.display = time_select.value === 'custom' ? 'block' : 'none';
-		if (time_select.value === 'custom') custom_input.focus();
+		if (time_select.value === 'custom') custom_input.focus({ preventScroll: true });
 	});
 
 	// Auto-resize notes textarea dynamically to fit text entered
@@ -472,8 +532,10 @@ function setup_inline_meal_form_events(form_el) {
 	save_btn.addEventListener('click', () => save_inline_meal(form_el));
 	cancel_btn.addEventListener('click', () => close_inline_meal_form(form_el));
 
-	// Focus the name input
-	setTimeout(() => name_input.focus(), 0);
+	// Focus the name input without jumping scroll
+	if (auto_focus && name_input) {
+		setTimeout(() => name_input.focus({ preventScroll: true }), 0);
+	}
 }
 
 // Open inline meal form (add or edit)
@@ -483,7 +545,7 @@ async function open_inline_meal_form(day_id, meal_id = null) {
 		const existing_form = document.querySelector(`.inline-meal-form[data-meal-id="${meal_id}"]`);
 		if (existing_form) {
 			const name_input = existing_form.querySelector('.inline-meal-name');
-			if (name_input) name_input.focus();
+			if (name_input) name_input.focus({ preventScroll: true });
 			return;
 		}
 
@@ -496,7 +558,7 @@ async function open_inline_meal_form(day_id, meal_id = null) {
 			meal_item.classList.add('inline-editing');
 			meal_item.insertAdjacentHTML('afterend', form_html);
 			const form_el = meal_item.nextElementSibling;
-			setup_inline_meal_form_events(form_el);
+			setup_inline_meal_form_events(form_el, true);
 		}
 	} else {
 		// Add mode: find the day card and insert before the day-actions
@@ -506,13 +568,14 @@ async function open_inline_meal_form(day_id, meal_id = null) {
 			const form_html = build_inline_meal_form_html(day_id, null, null);
 			day_actions.insertAdjacentHTML('beforebegin', form_html);
 			const form_el = day_actions.previousElementSibling;
-			setup_inline_meal_form_events(form_el);
+			setup_inline_meal_form_events(form_el, true);
 		}
 	}
 }
 
 // Save Meal from inline form
 async function save_inline_meal(form_el) {
+	const scroll_pos = get_current_scroll_position();
 	const day_id = parseInt(form_el.dataset.dayId);
 	const meal_id_str = form_el.dataset.mealId;
 	const meal_id = meal_id_str ? parseInt(meal_id_str) : null;
@@ -569,11 +632,14 @@ async function save_inline_meal(form_el) {
 
 	// Restore any other open forms that were active
 	restore_open_meal_forms_state(other_open_forms);
+
+	restore_scroll_position(scroll_pos);
 }
 
 // Delete Meal
 async function delete_meal(meal_id) {
 	if (confirm('Are you sure you want to delete this meal?')) {
+		const scroll_pos = get_current_scroll_position();
 		const deleting_form = document.querySelector(`.inline-meal-form[data-meal-id="${meal_id}"]`);
 		const other_open_forms = get_open_meal_forms_state(deleting_form);
 		await db.meals.delete(meal_id);
@@ -585,11 +651,13 @@ async function delete_meal(meal_id) {
 		}
 
 		restore_open_meal_forms_state(other_open_forms);
+		restore_scroll_position(scroll_pos);
 	}
 }
 
 // Duplicate Meal
 async function duplicate_meal(meal_id) {
+	const scroll_pos = get_current_scroll_position();
 	const other_open_forms = get_open_meal_forms_state();
 	const meal = await db.meals.get(meal_id);
 	if (meal) {
@@ -616,20 +684,24 @@ async function duplicate_meal(meal_id) {
 		}
 
 		restore_open_meal_forms_state(other_open_forms);
+		restore_scroll_position(scroll_pos);
 	}
 }
 
 // Delete Day
 async function delete_day(day_id) {
 	if (confirm('Are you sure you want to delete this entire day? All meals will be removed.')) {
+		const scroll_pos = get_current_scroll_position();
 		await db.days.delete(day_id);
 		await db.meals.where('day_id').equals(day_id).delete();
-		load_and_display_days();
+		await load_and_display_days();
+		restore_scroll_position(scroll_pos);
 	}
 }
 
 // Duplicate Day
 async function duplicate_day(day_id) {
+	const scroll_pos = get_current_scroll_position();
 	const day = await db.days.get(day_id);
 	const meals = await db.meals.where('day_id').equals(day_id).toArray();
 
@@ -665,16 +737,24 @@ async function duplicate_day(day_id) {
 			await db.meals.add(new_meal);
 		}
 
-		load_and_display_days();
+		await load_and_display_days();
+		restore_scroll_position(scroll_pos);
 	}
 }
 
 // Load and Display Days
 async function load_and_display_days() {
+	const scroll_pos = get_current_scroll_position();
 	const container = document.getElementById('days_container');
+	const current_height = container.offsetHeight;
+	if (current_height > 0) {
+		container.style.minHeight = `${current_height}px`;
+	}
+
 	const days = await db.days.toArray();
 
 	if (days.length === 0) {
+		container.style.minHeight = '';
 		container.innerHTML = `
 			<div class="w-100">
 				<div class="empty-state">
@@ -683,23 +763,34 @@ async function load_and_display_days() {
 				</div>
 			</div>
 		`;
+		restore_scroll_position(scroll_pos);
 		return;
 	}
 
 	// Sort days in descending order (newest first)
 	days.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-	container.innerHTML = '';
-	for (const day of days) {
+	// Fetch all meals for all days in parallel BEFORE touching the DOM
+	const days_with_meals = await Promise.all(days.map(async (day) => {
 		const meals = await db.meals.where('day_id').equals(day.id).toArray();
 		meals.sort((a, b) => {
 			const oa = typeof a.order === 'number' ? a.order : a.id;
 			const ob = typeof b.order === 'number' ? b.order : b.id;
 			return oa - ob;
 		});
-		const day_element = create_day_element(day, meals);
-		container.appendChild(day_element);
+		return { day, meals };
+	}));
+
+	const fragment = document.createDocumentFragment();
+	for (const item of days_with_meals) {
+		const day_element = create_day_element(item.day, item.meals);
+		fragment.appendChild(day_element);
 	}
+
+	container.replaceChildren(fragment);
+	container.style.minHeight = '';
+
+	restore_scroll_position(scroll_pos);
 }
 
 // Create Day Element
@@ -934,7 +1025,7 @@ function open_inline_day_notes_form(day_id, current_notes) {
 		}
 	});
 
-	setTimeout(() => textarea.focus(), 0);
+	setTimeout(() => textarea.focus({ preventScroll: true }), 0);
 }
 
 // Close inline day notes form
@@ -951,6 +1042,7 @@ function close_inline_day_notes_form() {
 
 // Save day notes
 async function save_day_notes(day_id, form_el) {
+	const scroll_pos = get_current_scroll_position();
 	const other_open_forms = get_open_meal_forms_state();
 	const notes = form_el.querySelector('.inline-day-notes-textarea').value.trim();
 	await db.days.update(day_id, { notes });
@@ -962,6 +1054,7 @@ async function save_day_notes(day_id, form_el) {
 	}
 
 	restore_open_meal_forms_state(other_open_forms);
+	restore_scroll_position(scroll_pos);
 }
 
 // Helper to find meal element below cursor Y
@@ -1169,9 +1262,15 @@ async function perform_search() {
 
 // Display Search Results
 async function display_search_results(results) {
+	const scroll_pos = get_current_scroll_position();
 	const container = document.getElementById('days_container');
+	const current_height = container.offsetHeight;
+	if (current_height > 0) {
+		container.style.minHeight = `${current_height}px`;
+	}
 
 	if (results.length === 0) {
+		container.style.minHeight = '';
 		container.innerHTML = `
 			<div class="w-100">
 				<div class="no-results">
@@ -1180,6 +1279,7 @@ async function display_search_results(results) {
 				</div>
 			</div>
 		`;
+		restore_scroll_position(scroll_pos);
 		return;
 	}
 
@@ -1192,8 +1292,7 @@ async function display_search_results(results) {
 		grouped_by_day[meal.day_id].push(meal);
 	}
 
-	container.innerHTML = '';
-	for (const day_id in grouped_by_day) {
+	const days_data = await Promise.all(Object.keys(grouped_by_day).map(async (day_id) => {
 		grouped_by_day[day_id].sort((a, b) => {
 			const oa = typeof a.order === 'number' ? a.order : a.id;
 			const ob = typeof b.order === 'number' ? b.order : b.id;
@@ -1201,11 +1300,21 @@ async function display_search_results(results) {
 		});
 		const day_id_num = parseInt(day_id);
 		const day = await db.days.get(day_id_num);
-		if (day) {
-			const day_element = create_day_element(day, grouped_by_day[day_id]);
-			container.appendChild(day_element);
+		return day ? { day, meals: grouped_by_day[day_id] } : null;
+	}));
+
+	const fragment = document.createDocumentFragment();
+	for (const item of days_data) {
+		if (item) {
+			const day_element = create_day_element(item.day, item.meals);
+			fragment.appendChild(day_element);
 		}
 	}
+
+	container.replaceChildren(fragment);
+	container.style.minHeight = '';
+
+	restore_scroll_position(scroll_pos);
 }
 
 // Clear Search
