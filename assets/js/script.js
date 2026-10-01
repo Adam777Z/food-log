@@ -337,7 +337,7 @@ async function save_edit_day_date() {
 // Build inline meal form HTML
 function build_inline_meal_form_html(day_id, meal_id, meal_or_data) {
 	const is_edit = !!meal_id;
-	const title = is_edit ? 'Edit Meal' : 'Add Meal';
+	const title = is_edit ? 'Edit meal' : 'Add meal';
 	const name_val = meal_or_data ? escape_html(meal_or_data.name || '') : '';
 	const calories_val = meal_or_data && meal_or_data.calories !== undefined && meal_or_data.calories !== null && meal_or_data.calories !== '' ? meal_or_data.calories : '';
 	const notes_val = meal_or_data ? escape_html(meal_or_data.notes || '') : '';
@@ -346,7 +346,7 @@ function build_inline_meal_form_html(day_id, meal_id, meal_or_data) {
 		{ value: '', label: 'Select time' },
 		{ value: 'overnight', label: 'Overnight' },
 		{ value: 'morning', label: 'Morning' },
-		{ value: 'beforeNoon', label: 'Before Noon' },
+		{ value: 'beforeNoon', label: 'Before noon' },
 		{ value: 'afternoon', label: 'Afternoon' },
 		{ value: 'evening', label: 'Evening' },
 		{ value: 'night', label: 'Night' },
@@ -384,11 +384,11 @@ function build_inline_meal_form_html(day_id, meal_id, meal_or_data) {
 			</div>
 			<div class="inline-meal-form-body">
 				<div class="mb-2">
-					<label class="form-label form-label-sm">Meal Name</label>
+					<label class="form-label form-label-sm">Meal name</label>
 					<input type="text" class="form-control form-control-sm inline-meal-name" value="${name_val}" placeholder="For example: drink 300 ml, soup 300 g, salt 1 g, water 300 ml" required>
 				</div>
 				<div class="mb-2">
-					<label class="form-label form-label-sm">Time of Day</label>
+					<label class="form-label form-label-sm">Time of day</label>
 					<select class="form-select form-select-sm inline-meal-time" required>
 						${options_html}
 					</select>
@@ -405,7 +405,7 @@ function build_inline_meal_form_html(day_id, meal_id, meal_or_data) {
 			</div>
 			<div class="inline-meal-form-actions">
 				<button type="button" class="btn btn-sm btn-secondary inline-meal-cancel-btn">Cancel</button>
-				<button type="button" class="btn btn-sm btn-primary inline-meal-save-btn">Save Meal</button>
+				<button type="button" class="btn btn-sm btn-primary inline-meal-save-btn">Save meal</button>
 			</div>
 		</div>
 	`;
@@ -769,7 +769,7 @@ async function load_and_display_days() {
 			<div class="w-100">
 				<div class="empty-state">
 					<i class="bi bi-calendar-event"></i>
-					<p>No days logged yet. Click "Add Day" to get started!</p>
+					<p>No days logged yet. Click "Add day" to get started!</p>
 				</div>
 			</div>
 		`;
@@ -908,16 +908,16 @@ function create_day_element(day, meals) {
 			${meals_html}
 			<div class="day-actions">
 				<button class="btn btn-sm btn-success add-meal-btn" data-day-id="${day.id}">
-					<i class="bi bi-plus-circle"></i> Add Meal
+					<i class="bi bi-plus-circle"></i> Add meal
 				</button>
 				<button class="btn btn-sm btn-secondary edit-day-btn" data-day-id="${day.id}" data-day-date="${day.date}">
-					<i class="bi bi-calendar-edit"></i> Change Date
+					<i class="bi bi-calendar-edit"></i> Change date
 				</button>
 				<button class="btn btn-sm btn-info copy-day-btn" data-day-id="${day.id}">
-					<i class="bi bi-files"></i> Duplicate Day
+					<i class="bi bi-files"></i> Duplicate day
 				</button>
 				<button class="btn btn-sm btn-danger delete-day-btn" data-day-id="${day.id}">
-					<i class="bi bi-trash"></i> Delete Day
+					<i class="bi bi-trash"></i> Delete day
 				</button>
 			</div>
 		</div>
@@ -1002,7 +1002,7 @@ function open_inline_day_notes_form(day_id, current_notes) {
 				<textarea class="form-control form-control-sm inline-day-notes-textarea" rows="2" placeholder="Add notes for this day...">${escape_html(current_notes)}</textarea>
 				<div class="inline-day-notes-actions">
 					<button type="button" class="btn btn-sm btn-secondary inline-day-notes-cancel-btn">Cancel</button>
-					<button type="button" class="btn btn-sm btn-success inline-day-notes-save-btn">Save Day Notes</button>
+					<button type="button" class="btn btn-sm btn-success inline-day-notes-save-btn">Save day notes</button>
 				</div>
 			</div>
 		</div>
@@ -1348,7 +1348,7 @@ function get_time_display_text(time_of_day) {
 	const time_map = {
 		'overnight': '🌙 Overnight',
 		'morning': '🌅 Morning',
-		'beforeNoon': '🌄 Before Noon',
+		'beforeNoon': '🌄 Before noon',
 		'afternoon': '☀️ Afternoon',
 		'evening': '🌆 Evening',
 		'night': '🌃 Night'
