@@ -808,8 +808,9 @@ function create_day_element(day, meals) {
 	const day_div = document.createElement('div');
 	day_div.className = 'w-100';
 
-	const date_obj = new Date(day.date);
-	const date_string = date_obj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+	const date_parts = (typeof day.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day.date)) ? day.date.split('-').map(Number) : null;
+	const date_obj = date_parts ? new Date(date_parts[0], date_parts[1] - 1, date_parts[2]) : new Date(day.date);
+	const date_string = day.date + ' / ' + date_obj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) + ' (' + date_obj.toLocaleDateString('en-US', { weekday: 'long' }) + ')';
 	const total_calories = meals.reduce((sum, meal) => {
 		const cal = (meal.calories !== null && meal.calories !== undefined && meal.calories !== '') ? Number(meal.calories) : 0;
 		return sum + (isNaN(cal) ? 0 : cal);
