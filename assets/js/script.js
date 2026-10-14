@@ -722,9 +722,14 @@ async function duplicate_day(day_id) {
 			return oa - ob;
 		});
 
-		// Create new day with tomorrow's date
-		const next_date = new Date(day.date);
-		next_date.setDate(next_date.getDate() + 1);
+		// Create the next day after the newest existing entry
+		const existing_days = await db.days.toArray();
+		const newest_date = existing_days.reduce((latest, existing_day) =>
+			existing_day.date > latest ? existing_day.date : latest,
+			day.date
+		);
+		const next_date = new Date(`${newest_date}T00:00:00.000Z`);
+		next_date.setUTCDate(next_date.getUTCDate() + 1);
 		const new_date_string = next_date.toISOString().split('T')[0];
 
 		// Add new day
