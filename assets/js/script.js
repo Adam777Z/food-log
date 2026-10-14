@@ -389,7 +389,7 @@ function build_inline_meal_form_html(day_id, meal_id, meal_or_data) {
 				</div>
 				<div class="mb-2">
 					<label class="form-label form-label-sm">Time of day</label>
-					<select class="form-select form-select-sm inline-meal-time" required>
+					<select class="form-select form-select-sm inline-meal-time">
 						${options_html}
 					</select>
 					<input type="text" class="form-control form-control-sm mt-1 inline-meal-time-custom" placeholder="Enter custom time" value="${custom_time_val}" style="display:${custom_time_display};">
@@ -586,7 +586,7 @@ async function save_inline_meal(form_el) {
 	const time_select = form_el.querySelector('.inline-meal-time').value;
 	const time_of_day = time_select === 'custom' ? form_el.querySelector('.inline-meal-time-custom').value : time_select;
 
-	if (!name || !time_select) {
+	if (!name) {
 		alert('Please fill in all required fields');
 		return;
 	}
@@ -846,8 +846,10 @@ function create_day_element(day, meals) {
 					<div class="meal-details">
 						<p class="meal-name">${escape_html(meal.name)}</p>
 						<div class="meal-info">
-							<span class="meal-info-label">Time:</span>
-							<span>${escape_html(time_display)}</span>
+							${time_display ? `
+								<span class="meal-info-label">Time:</span>
+								<span>${escape_html(time_display)}</span>
+							` : ''}
 							${meal.calories !== null && meal.calories !== undefined && meal.calories !== '' ? `
 								<span class="meal-info-label">Calories:</span>
 								<span class="meal-calories">${meal.calories} kcal</span>
