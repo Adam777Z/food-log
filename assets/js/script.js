@@ -5,9 +5,24 @@ db.version(2).stores({
 	meals: '++id, day_id, date'
 });
 
+db.version(3).stores({
+	days: '++id, date, notes, created_at',
+	meals: '++id, day_id, date',
+	settings: 'key'
+});
+
+const AUTO_BACKUP_SETTING_KEY = 'automatic_backup_file';
+
 // Application State
 let search_active = false;
 let current_editing_day_date = null;
+let automatic_backup_file_handle = null;
+let automatic_backup_popover = null;
+let automatic_backup_write_queue = Promise.resolve();
+let automatic_backup_generation = 0;
+let automatic_backup_change_version = 0;
+let automatic_backup_action = 'choose';
+let automatic_backup_dirty = false;
 
 // Helper to get current window scroll position
 function get_current_scroll_position() {
@@ -19,7 +34,9 @@ function get_current_scroll_position() {
 
 // Helper to restore window scroll position reliably
 function restore_scroll_position(pos) {
-	if (!pos) return;
+	if (!pos) {
+		return;
+	}
 	const do_restore = () => {
 		window.scrollTo({
 			left: pos.x,
@@ -36,6 +53,7 @@ function restore_scroll_position(pos) {
 // Initialize the app
 document.addEventListener('DOMContentLoaded', () => {
 	setup_event_listeners();
+	initialize_automatic_backup();
 	load_and_display_days();
 });
 
@@ -54,8 +72,18 @@ function setup_event_listeners() {
 	window.addEventListener('mouseup', cleanup_draggable_items);
 	window.addEventListener('blur', cleanup_draggable_items);
 
-	// Backup, Restore and Erase
+	// Backup, Restore, and Erase
 	document.getElementById('backup_btn').addEventListener('click', backup_data);
+	document.getElementById('auto_backup_btn').addEventListener('click', handle_automatic_backup_action);
+	const auto_backup_btn = document.getElementById('auto_backup_btn');
+	automatic_backup_popover = new bootstrap.Popover(auto_backup_btn, {
+		trigger: 'hover focus',
+		placement: 'bottom',
+		container: 'body',
+		customClass: 'auto-backup-popover',
+		title: 'Automatic backup status',
+		content: () => auto_backup_btn.dataset.statusMessage || ''
+	});
 	document.getElementById('restore_btn').addEventListener('click', () => {
 		document.getElementById('restore_file').click();
 	});
@@ -114,32 +142,276 @@ function setup_event_listeners() {
 	document.getElementById('search_btn').addEventListener('click', perform_search);
 	document.getElementById('clear_search_btn').addEventListener('click', clear_search);
 	document.getElementById('search_date').addEventListener('keypress', (e) => {
-		if (e.key === 'Enter') perform_search();
+		if (e.key === 'Enter') {
+			perform_search();
+		}
 	});
 	document.getElementById('search_meal_name').addEventListener('keypress', (e) => {
-		if (e.key === 'Enter') perform_search();
+		if (e.key === 'Enter') {
+			perform_search();
+		}
 	});
 	document.getElementById('search_calories').addEventListener('keypress', (e) => {
-		if (e.key === 'Enter') perform_search();
+		if (e.key === 'Enter') {
+			perform_search();
+		}
 	});
 	document.getElementById('search_notes').addEventListener('keypress', (e) => {
-		if (e.key === 'Enter') perform_search();
+		if (e.key === 'Enter') {
+			perform_search();
+		}
 	});
 }
 
-// Backup Data to JSON File
+function supports_automatic_backup() {
+	return window.isSecureContext && typeof window.showSaveFilePicker === 'function';
+}
+
+function format_24_hour_time(date) {
+	return `${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function format_24_hour_date_time(date) {
+	const date_part = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+	return `${date_part} ${format_24_hour_time(date)}`;
+}
+
+function set_automatic_backup_status(message, action = null, button_text = '', status_state = 'info') {
+	const button = document.getElementById('auto_backup_btn');
+	const status_icon = document.getElementById('auto_backup_status_icon');
+	const status_styles = {
+		'not-set': 'bi-circle',
+		syncing: 'bi-arrow-repeat auto-backup-status-spinning',
+		success: 'bi-check-circle-fill',
+		warning: 'bi-exclamation-triangle-fill',
+		error: 'bi-exclamation-circle-fill',
+		info: 'bi-info-circle-fill'
+	};
+	const icon = status_styles[status_state] || status_styles.info;
+	status_icon.className = `bi ${icon} text-white`;
+	button.dataset.statusMessage = message;
+	automatic_backup_popover?.setContent({ '.popover-body': message });
+	button.hidden = false;
+	if (action) {
+		automatic_backup_action = action;
+		button.querySelector('span').textContent = 'Auto backup';
+		button.setAttribute('aria-label', `Auto backup. ${button_text}. Status: ${message}`);
+	} else {
+		automatic_backup_action = 'unavailable';
+		button.setAttribute('aria-label', `Auto backup unavailable. Status: ${message}`);
+	}
+}
+
+function show_automatic_backup_unavailable() {
+	set_automatic_backup_status('Automatic data backup is not available in this browser. Use Backup to download a copy.', null, '', 'info');
+}
+
+function show_automatic_backup_not_configured() {
+	if (!supports_automatic_backup()) {
+		show_automatic_backup_unavailable();
+		return;
+	}
+	set_automatic_backup_status('Automatic backup is not set.', 'choose', 'Set backup file', 'not-set');
+}
+
+function show_automatic_backup_ready(last_saved_at = null) {
+	const message = last_saved_at
+		? `${automatic_backup_file_handle.name}\nLast saved: ${format_24_hour_date_time(new Date(last_saved_at))}`
+		: `${automatic_backup_file_handle.name} selected. No backup has been saved yet.`;
+	set_automatic_backup_status(message, 'change', 'Change backup file', last_saved_at ? 'success' : 'warning');
+}
+
+async function initialize_automatic_backup() {
+	if (!supports_automatic_backup()) {
+		show_automatic_backup_unavailable();
+		return;
+	}
+
+	try {
+		const setting = await db.settings.get(AUTO_BACKUP_SETTING_KEY);
+		if (!setting || !setting.file_handle) {
+			show_automatic_backup_not_configured();
+			return;
+		}
+
+		automatic_backup_file_handle = setting.file_handle;
+		const permission = await automatic_backup_file_handle.queryPermission({ mode: 'readwrite' });
+		if (permission === 'granted') {
+			show_automatic_backup_ready(setting.last_saved_at);
+		} else {
+			set_automatic_backup_status('Automatic data backup needs permission. The data is still saved on this device.', 'reconnect', 'Reconnect backup', 'warning');
+		}
+	} catch (error) {
+		console.error('Automatic Food Log backup setup error:', error);
+		set_automatic_backup_status('Automatic data backup needs attention. The data is still saved on this device.', 'reconnect', 'Reconnect backup', 'warning');
+	}
+}
+
+async function handle_automatic_backup_action() {
+	if (automatic_backup_action === 'unavailable') {
+		return;
+	}
+
+	if (automatic_backup_action === 'choose' || automatic_backup_action === 'change') {
+		await choose_automatic_backup_file();
+		return;
+	}
+
+	if (automatic_backup_action === 'reconnect') {
+		try {
+			const permission = await automatic_backup_file_handle.requestPermission({ mode: 'readwrite' });
+			if (permission !== 'granted') {
+				set_automatic_backup_status('Automatic data backup still needs permission. The data is still saved on this device.', 'reconnect', 'Reconnect backup', 'warning');
+				return;
+			}
+			automatic_backup_dirty = true;
+			automatic_backup_change_version++;
+			await enqueue_automatic_backup_write();
+		} catch (error) {
+			show_automatic_backup_failure(error);
+		}
+		return;
+	}
+
+	automatic_backup_dirty = true;
+	automatic_backup_change_version++;
+	await enqueue_automatic_backup_write();
+}
+
+async function choose_automatic_backup_file() {
+	try {
+		const file_handle = await window.showSaveFilePicker({
+			suggestedName: 'food-log-backup.json',
+			types: [{
+				description: 'Food Log backup',
+				accept: { 'application/json': ['.json'] }
+			}]
+		});
+
+		automatic_backup_file_handle = file_handle;
+		await db.settings.put({ key: AUTO_BACKUP_SETTING_KEY, file_handle, last_saved_at: null });
+		automatic_backup_dirty = true;
+		automatic_backup_change_version++;
+		await enqueue_automatic_backup_write();
+	} catch (error) {
+		if (error.name === 'AbortError') {
+			return;
+		}
+		console.error('Automatic Food Log backup setup error:', error);
+		set_automatic_backup_status('Could not set the backup file. The data is still saved on this device.', 'choose', 'Set backup file', 'error');
+	}
+}
+
+function schedule_automatic_backup() {
+	if (!automatic_backup_file_handle) {
+		return;
+	}
+
+	automatic_backup_dirty = true;
+	automatic_backup_change_version++;
+	set_automatic_backup_status('Data changed. Automatic data backup is pending.', 'retry', 'Save backup now', 'syncing');
+	enqueue_automatic_backup_write();
+}
+
+function enqueue_automatic_backup_write() {
+	const requested_generation = automatic_backup_generation;
+	automatic_backup_write_queue = automatic_backup_write_queue.catch(() => {}).then(async () => {
+		if (requested_generation !== automatic_backup_generation || !automatic_backup_dirty) {
+			return;
+		}
+		await write_automatic_backup(requested_generation);
+	});
+	return automatic_backup_write_queue;
+}
+
+async function write_automatic_backup(generation) {
+	const file_handle = automatic_backup_file_handle;
+	if (!file_handle) {
+		return false;
+	}
+
+	let writable = null;
+	try {
+		const permission = await file_handle.queryPermission({ mode: 'readwrite' });
+		if (permission !== 'granted') {
+			set_automatic_backup_status('Automatic data backup needs permission. The data is still saved on this device.', 'reconnect', 'Reconnect backup', 'warning');
+			return false;
+		}
+
+		const write_version = automatic_backup_change_version;
+		set_automatic_backup_status('Saving data backup…', 'retry', 'Save backup now', 'syncing');
+		const backup = await get_backup_data();
+		if (generation !== automatic_backup_generation) {
+			return false;
+		}
+
+		writable = await file_handle.createWritable();
+		await writable.write(JSON.stringify(backup, null, 2));
+		await writable.close();
+		writable = null;
+
+		if (generation !== automatic_backup_generation) {
+			return true;
+		}
+		if (write_version !== automatic_backup_change_version) {
+			return true;
+		}
+
+		const last_saved_at = new Date().toISOString();
+		await db.settings.put({ key: AUTO_BACKUP_SETTING_KEY, file_handle, last_saved_at });
+		automatic_backup_dirty = false;
+		show_automatic_backup_ready(last_saved_at);
+		return true;
+	} catch (error) {
+		if (writable) {
+			try {
+				await writable.abort();
+			} catch (_) {}
+		}
+		show_automatic_backup_failure(error);
+		return false;
+	}
+}
+
+function show_automatic_backup_failure(error) {
+	console.error('Automatic Food Log backup error:', error);
+	if (error && (error.name === 'NotAllowedError' || error.name === 'SecurityError')) {
+		set_automatic_backup_status('Automatic data backup needs permission. The data is still saved on this device.', 'reconnect', 'Reconnect backup', 'warning');
+		return;
+	}
+	set_automatic_backup_status('Automatic data backup failed. The data is still saved on this device.', 'retry', 'Retry backup', 'error');
+}
+
+async function cancel_pending_automatic_backup() {
+	automatic_backup_generation++;
+	automatic_backup_dirty = false;
+	await automatic_backup_write_queue;
+}
+
+function show_status_after_restore() {
+	if (!supports_automatic_backup()) {
+		show_automatic_backup_unavailable();
+	} else if (!automatic_backup_file_handle) {
+		show_automatic_backup_not_configured();
+	} else {
+		set_automatic_backup_status('Data restored. Automatic data backup file was left unchanged.', 'update', 'Update backup file', 'info');
+	}
+}
+
+async function get_backup_data() {
+	// Fetch all data from database
+	return db.transaction('r', db.days, db.meals, async () => ({
+		version: 1,
+		exported_at: new Date().toISOString(),
+		days: await db.days.toArray(),
+		meals: await db.meals.toArray()
+	}));
+}
+
+// Backup data to JSON file
 async function backup_data() {
 	try {
-		// Fetch all data from database
-		const days = await db.days.toArray();
-		const meals = await db.meals.toArray();
-
-		const backup = {
-			version: 1,
-			exported_at: new Date().toISOString(),
-			days: days,
-			meals: meals
-		};
+		const backup = await get_backup_data();
 
 		// Create a blob and download
 		const json_string = JSON.stringify(backup, null, 2);
@@ -160,11 +432,14 @@ async function backup_data() {
 	}
 }
 
-// Restore Data from JSON File
+// Restore data from JSON file
 async function restore_data(event) {
+	let backup_was_pending = false;
 	try {
 		const file = event.target.files[0];
-		if (!file) return;
+		if (!file) {
+			return;
+		}
 
 		const file_content = await file.text();
 		const backup = JSON.parse(file_content);
@@ -182,47 +457,67 @@ async function restore_data(event) {
 			return;
 		}
 
-		// Clear existing data
-		await db.days.clear();
-		await db.meals.clear();
+		backup_was_pending = automatic_backup_dirty;
+		await cancel_pending_automatic_backup();
+		await db.transaction('rw', db.days, db.meals, async () => {
+			// Clear existing data
+			await db.days.clear();
+			await db.meals.clear();
+			// Restore days
+			await db.days.bulkAdd(backup.days);
+			// Restore meals
+			await db.meals.bulkAdd(backup.meals);
+		});
+		backup_was_pending = false;
 
-		// Restore days
-		for (const day of backup.days) {
-			await db.days.add(day);
-		}
-
-		// Restore meals
-		for (const meal of backup.meals) {
-			await db.meals.add(meal);
-		}
-
-		load_and_display_days();
+		await load_and_display_days();
+		show_status_after_restore();
 		alert('Data restored successfully!');
 		event.target.value = '';
 	} catch (error) {
+		if (backup_was_pending && automatic_backup_file_handle) {
+			schedule_automatic_backup();
+		}
 		console.error('Restore error:', error);
 		alert('Error restoring data: ' + error.message);
 		event.target.value = '';
 	}
 }
 
-// Erase All Data
+// Erase all data
 async function erase_all_data() {
+	let backup_was_pending = false;
 	try {
-		const days_count = await db.days.count();
-		const meals_count = await db.meals.count();
+		const [days_count, meals_count, backup_setting] = await Promise.all([
+			db.days.count(),
+			db.meals.count(),
+			db.settings.get(AUTO_BACKUP_SETTING_KEY)
+		]);
 
-		if (days_count === 0 && meals_count === 0) {
+		if (days_count === 0 && meals_count === 0 && !backup_setting) {
 			alert('There is no data to erase.');
 			return;
 		}
 
-		const confirm_erase = confirm('Are you sure you want to erase ALL data? This will permanently delete all logged days and meals.\n\nThis action cannot be undone!');
+		let erase_message = 'Are you sure you want to erase ALL Food Log data? This will permanently delete all logged days and meals.\n\nThis action cannot be undone!';
+		if (backup_setting) {
+			erase_message += '\n\nFood Log will forget the selected backup file but will not delete the file itself. Your browser may retain file permission; remove it in browser site settings to revoke access.';
+		}
+		const confirm_erase = confirm(erase_message);
 
-		if (!confirm_erase) return;
+		if (!confirm_erase) {
+			return;
+		}
 
-		await db.days.clear();
-		await db.meals.clear();
+		backup_was_pending = automatic_backup_dirty;
+		await cancel_pending_automatic_backup();
+		await db.transaction('rw', db.days, db.meals, db.settings, async () => {
+			await db.days.clear();
+			await db.meals.clear();
+			await db.settings.delete(AUTO_BACKUP_SETTING_KEY);
+		});
+		automatic_backup_file_handle = null;
+		show_automatic_backup_not_configured();
 
 		if (search_active) {
 			clear_search();
@@ -230,8 +525,11 @@ async function erase_all_data() {
 			load_and_display_days();
 		}
 
-		alert('All data has been erased successfully!');
+		alert('All Food Log data has been erased. The backup file itself was not deleted. If needed, remove its permission in browser site settings.');
 	} catch (error) {
+		if (backup_was_pending && automatic_backup_file_handle) {
+			schedule_automatic_backup();
+		}
 		console.error('Erase error:', error);
 		alert('Error erasing data: ' + error.message);
 	}
@@ -269,6 +567,7 @@ async function save_new_day() {
 		notes: '',
 		created_at: new Date().toISOString()
 	});
+	schedule_automatic_backup();
 
 	const modal_el = document.getElementById('add_day_modal');
 	const modal_instance = bootstrap.Modal.getInstance(modal_el);
@@ -314,11 +613,13 @@ async function save_edit_day_date() {
 		return;
 	}
 
-	// Update the day
-	await db.days.update(day_id, { date: new_date });
-
-	// Update all meals for this day
-	await db.meals.where('day_id').equals(day_id).modify({ date: new_date });
+	await db.transaction('rw', db.days, db.meals, async () => {
+		// Update the day
+		await db.days.update(day_id, { date: new_date });
+		// Update all meals for this day
+		await db.meals.where('day_id').equals(day_id).modify({ date: new_date });
+	});
+	schedule_automatic_backup();
 
 	const modal_el = document.getElementById('edit_day_modal');
 	const modal_instance = bootstrap.Modal.getInstance(modal_el);
@@ -416,7 +717,9 @@ function get_open_meal_forms_state(exclude_form = null) {
 	const forms = document.querySelectorAll('.inline-meal-form');
 	const states = [];
 	forms.forEach(form => {
-		if (form === exclude_form) return;
+		if (form === exclude_form) {
+			return;
+		}
 		const day_id = parseInt(form.dataset.dayId);
 		const meal_id_str = form.dataset.mealId;
 		const meal_id = meal_id_str ? parseInt(meal_id_str) : null;
@@ -435,7 +738,9 @@ function get_open_meal_forms_state(exclude_form = null) {
 
 // Restore previously open inline meal forms
 function restore_open_meal_forms_state(states) {
-	if (!states || states.length === 0) return;
+	if (!states || states.length === 0) {
+		return;
+	}
 	states.forEach(state => {
 		const form_html = build_inline_meal_form_html(state.day_id, state.meal_id, state);
 		if (state.meal_id) {
@@ -488,12 +793,16 @@ function setup_inline_meal_form_events(form_el, auto_focus = true) {
 
 	time_select.addEventListener('change', () => {
 		custom_input.style.display = time_select.value === 'custom' ? 'block' : 'none';
-		if (time_select.value === 'custom') custom_input.focus({ preventScroll: true });
+		if (time_select.value === 'custom') {
+			custom_input.focus({ preventScroll: true });
+		}
 	});
 
 	// Auto-resize notes textarea dynamically to fit text entered
 	const auto_resize_notes = () => {
-		if (!notes_input) return;
+		if (!notes_input) {
+			return;
+		}
 		notes_input.style.height = 'auto';
 		const border_offset = notes_input.offsetHeight - notes_input.clientHeight;
 		notes_input.style.height = `${notes_input.scrollHeight + border_offset}px`;
@@ -545,7 +854,9 @@ async function open_inline_meal_form(day_id, meal_id = null) {
 		const existing_form = document.querySelector(`.inline-meal-form[data-meal-id="${meal_id}"]`);
 		if (existing_form) {
 			const name_input = existing_form.querySelector('.inline-meal-name');
-			if (name_input) name_input.focus({ preventScroll: true });
+			if (name_input) {
+				name_input.focus({ preventScroll: true });
+			}
 			return;
 		}
 
@@ -630,6 +941,7 @@ async function save_inline_meal(form_el) {
 		meal_data.created_at = new Date().toISOString();
 		await db.meals.add(meal_data);
 	}
+	schedule_automatic_backup();
 
 	// Capture any OTHER open forms before reloading the list so their edit state isn't lost
 	const other_open_forms = get_open_meal_forms_state(form_el);
@@ -653,6 +965,7 @@ async function delete_meal(meal_id) {
 		const deleting_form = document.querySelector(`.inline-meal-form[data-meal-id="${meal_id}"]`);
 		const other_open_forms = get_open_meal_forms_state(deleting_form);
 		await db.meals.delete(meal_id);
+		schedule_automatic_backup();
 
 		if (search_active) {
 			await perform_search();
@@ -676,16 +989,19 @@ async function duplicate_meal(meal_id) {
 		new_meal.created_at = new Date().toISOString();
 		new_meal.updated_at = new Date().toISOString();
 		new_meal.order = (typeof meal.order === 'number' ? meal.order : 0) + 0.5;
-		await db.meals.add(new_meal);
+		await db.transaction('rw', db.meals, async () => {
+			await db.meals.add(new_meal);
 
-		// Re-normalize orders for this day
-		const day_meals = await db.meals.where('day_id').equals(meal.day_id).toArray();
-		day_meals.sort((a, b) => {
-			const oa = typeof a.order === 'number' ? a.order : a.id;
-			const ob = typeof b.order === 'number' ? b.order : b.id;
-			return oa - ob;
+			// Re-normalize orders for this day
+			const day_meals = await db.meals.where('day_id').equals(meal.day_id).toArray();
+			day_meals.sort((a, b) => {
+				const oa = typeof a.order === 'number' ? a.order : a.id;
+				const ob = typeof b.order === 'number' ? b.order : b.id;
+				return oa - ob;
+			});
+			await Promise.all(day_meals.map((m, idx) => db.meals.update(m.id, { order: idx })));
 		});
-		await Promise.all(day_meals.map((m, idx) => db.meals.update(m.id, { order: idx })));
+		schedule_automatic_backup();
 
 		if (search_active) {
 			await perform_search();
@@ -702,8 +1018,11 @@ async function duplicate_meal(meal_id) {
 async function delete_day(day_id) {
 	if (confirm('Are you sure you want to delete this entire day? All meals will be removed.')) {
 		const scroll_pos = get_current_scroll_position();
-		await db.days.delete(day_id);
-		await db.meals.where('day_id').equals(day_id).delete();
+		await db.transaction('rw', db.days, db.meals, async () => {
+			await db.days.delete(day_id);
+			await db.meals.where('day_id').equals(day_id).delete();
+		});
+		schedule_automatic_backup();
 		await load_and_display_days();
 		restore_scroll_position(scroll_pos);
 	}
@@ -732,25 +1051,28 @@ async function duplicate_day(day_id) {
 		next_date.setUTCDate(next_date.getUTCDate() + 1);
 		const new_date_string = next_date.toISOString().split('T')[0];
 
-		// Add new day
-		const new_day_id = await db.days.add({
-			date: new_date_string,
-			notes: day.notes || '',
-			created_at: new Date().toISOString()
-		});
+		await db.transaction('rw', db.days, db.meals, async () => {
+			// Add new day
+			const new_day_id = await db.days.add({
+				date: new_date_string,
+				notes: day.notes || '',
+				created_at: new Date().toISOString()
+			});
 
-		// Duplicate all meals from original day
-		for (let i = 0; i < meals.length; i++) {
-			const meal = meals[i];
-			const new_meal = { ...meal };
-			delete new_meal.id;
-			new_meal.day_id = new_day_id;
-			new_meal.date = new_date_string;
-			new_meal.order = i;
-			new_meal.created_at = new Date().toISOString();
-			new_meal.updated_at = new Date().toISOString();
-			await db.meals.add(new_meal);
-		}
+			// Duplicate all meals from original day
+			for (let i = 0; i < meals.length; i++) {
+				const meal = meals[i];
+				const new_meal = { ...meal };
+				delete new_meal.id;
+				new_meal.day_id = new_day_id;
+				new_meal.date = new_date_string;
+				new_meal.order = i;
+				new_meal.created_at = new Date().toISOString();
+				new_meal.updated_at = new Date().toISOString();
+				await db.meals.add(new_meal);
+			}
+		});
+		schedule_automatic_backup();
 
 		await load_and_display_days();
 		restore_scroll_position(scroll_pos);
@@ -997,11 +1319,15 @@ function open_inline_day_notes_form(day_id, current_notes) {
 	close_inline_day_notes_form();
 
 	const notes_btn = document.querySelector(`.edit-day-notes-btn[data-day-id="${day_id}"]`);
-	if (!notes_btn) return;
+	if (!notes_btn) {
+		return;
+	}
 
 	// Hide the existing notes text while editing
 	const notes_text_el = notes_btn.closest('.day-header').querySelector('.day-notes-text');
-	if (notes_text_el) notes_text_el.style.display = 'none';
+	if (notes_text_el) {
+		notes_text_el.style.display = 'none';
+	}
 
 	const form_html = `
 		<div class="inline-day-notes-form" data-day-id="${day_id}">
@@ -1023,7 +1349,9 @@ function open_inline_day_notes_form(day_id, current_notes) {
 
 	// Auto-resize day notes textarea dynamically to fit text entered
 	const auto_resize_day_notes = () => {
-		if (!textarea) return;
+		if (!textarea) {
+			return;
+		}
 		textarea.style.height = 'auto';
 		const border_offset = textarea.offsetHeight - textarea.clientHeight;
 		textarea.style.height = `${textarea.scrollHeight + border_offset}px`;
@@ -1058,7 +1386,9 @@ function close_inline_day_notes_form() {
 		// Restore hidden notes text if any
 		const day_id = existing.dataset.dayId;
 		const notes_text_el = document.querySelector(`.edit-day-notes-btn[data-day-id="${day_id}"]`)?.closest('.day-header')?.querySelector('.day-notes-text');
-		if (notes_text_el) notes_text_el.style.display = '';
+		if (notes_text_el) {
+			notes_text_el.style.display = '';
+		}
 		existing.remove();
 	}
 }
@@ -1069,6 +1399,7 @@ async function save_day_notes(day_id, form_el) {
 	const other_open_forms = get_open_meal_forms_state();
 	const notes = form_el.querySelector('.inline-day-notes-textarea').value.trim();
 	await db.days.update(day_id, { notes });
+	schedule_automatic_backup();
 
 	if (search_active) {
 		await perform_search();
@@ -1114,7 +1445,9 @@ let active_placeholder = null;
 // Setup Drag and Drop
 function setup_drag_and_drop(day_element) {
 	const meals_list = day_element.querySelector('.meals-list');
-	if (!meals_list) return;
+	if (!meals_list) {
+		return;
+	}
 
 	const meal_items = meals_list.querySelectorAll('.meal-item');
 
@@ -1188,8 +1521,12 @@ function setup_drag_and_drop(day_element) {
 		e.preventDefault();
 		e.dataTransfer.dropEffect = 'move';
 
-		if (!active_dragged_item || !active_placeholder) return;
-		if (meals_list.dataset.dayId !== active_dragged_day_id) return;
+		if (!active_dragged_item || !active_placeholder) {
+			return;
+		}
+		if (meals_list.dataset.dayId !== active_dragged_day_id) {
+			return;
+		}
 
 		const after_element = get_drag_after_element(meals_list, e.clientY);
 		if (after_element == null) {
@@ -1214,7 +1551,9 @@ function setup_drag_and_drop(day_element) {
 	meals_list.addEventListener('drop', async (e) => {
 		e.preventDefault();
 		if (!active_dragged_item || meals_list.dataset.dayId !== active_dragged_day_id) {
-			if (active_placeholder) active_placeholder.remove();
+			if (active_placeholder) {
+				active_placeholder.remove();
+			}
 			return;
 		}
 
@@ -1238,15 +1577,17 @@ function setup_drag_and_drop(day_element) {
 async function update_meal_order(meals_list) {
 	const meal_items = meals_list.querySelectorAll('.meal-item');
 
-	const updates = [];
-	meal_items.forEach((item, index) => {
-		const meal_id = parseInt(item.dataset.mealId);
-		if (!isNaN(meal_id)) {
-			updates.push(db.meals.update(meal_id, { order: index }));
-		}
+	await db.transaction('rw', db.meals, async () => {
+		const updates = [];
+		meal_items.forEach((item, index) => {
+			const meal_id = parseInt(item.dataset.mealId);
+			if (!isNaN(meal_id)) {
+				updates.push(db.meals.update(meal_id, { order: index }));
+			}
+		});
+		await Promise.all(updates);
 	});
-
-	await Promise.all(updates);
+	schedule_automatic_backup();
 }
 
 // Search Functionality
@@ -1377,7 +1718,9 @@ function escape_html(text) {
 // Water and Salt Extraction and Formatting Utilities
 
 function parse_fraction_or_float(val_str) {
-	if (!val_str) return 0;
+	if (!val_str) {
+		return 0;
+	}
 	val_str = String(val_str).trim().replace(',', '.');
 	if (val_str.includes('/')) {
 		const parts = val_str.split('/');
@@ -1394,7 +1737,9 @@ function parse_fraction_or_float(val_str) {
 }
 
 function convert_water_unit_to_ml(amount, unit) {
-	if (isNaN(amount) || amount <= 0) return 0;
+	if (isNaN(amount) || amount <= 0) {
+		return 0;
+	}
 	if (!unit) {
 		// Heuristic: "water 500" -> 500ml; "water 1.5" -> 1500ml; "water 2" -> 2000ml; "water 0.5" -> 500ml
 		if (amount <= 10) {
@@ -1446,7 +1791,9 @@ function convert_water_unit_to_ml(amount, unit) {
 }
 
 function convert_salt_unit_to_g(amount, unit) {
-	if (isNaN(amount) || amount <= 0) return 0;
+	if (isNaN(amount) || amount <= 0) {
+		return 0;
+	}
 	if (!unit) {
 		// Heuristic: "salt 2" -> 2g; "salt 500" -> 500mg = 0.5g
 		if (amount > 50) {
@@ -1477,7 +1824,9 @@ function convert_salt_unit_to_g(amount, unit) {
 }
 
 function extract_water_amount(text) {
-	if (!text || typeof text !== 'string') return 0;
+	if (!text || typeof text !== 'string') {
+		return 0;
+	}
 
 	let total_ml = 0;
 	const matched_ranges = [];
@@ -1552,7 +1901,9 @@ function extract_water_amount(text) {
 }
 
 function extract_salt_amount(text) {
-	if (!text || typeof text !== 'string') return 0;
+	if (!text || typeof text !== 'string') {
+		return 0;
+	}
 
 	let total_g = 0;
 	const matched_ranges = [];
@@ -1627,7 +1978,9 @@ function extract_salt_amount(text) {
 }
 
 function format_water_amount(ml) {
-	if (!ml || isNaN(ml) || ml <= 0) return '0 ml';
+	if (!ml || isNaN(ml) || ml <= 0) {
+		return '0 ml';
+	}
 	const rounded_ml = Math.round(ml * 10) / 10;
 	if (rounded_ml >= 1000) {
 		const liters = rounded_ml / 1000;
@@ -1640,7 +1993,9 @@ function format_water_amount(ml) {
 }
 
 function format_salt_amount(g) {
-	if (!g || isNaN(g) || g <= 0) return '0 g';
+	if (!g || isNaN(g) || g <= 0) {
+		return '0 g';
+	}
 	const rounded_g = Math.round(g * 100) / 100;
 	if (rounded_g === 0 && g > 0) {
 		const small_g = Math.round(g * 1000) / 1000;

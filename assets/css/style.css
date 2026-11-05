@@ -449,7 +449,32 @@ header h1 {
 	}
 }
 
+/* Auto Backup Popover */
+.auto-backup-popover .popover-body {
+	white-space: pre-line;
+}
+
+.auto-backup-popover[data-popper-placement^="bottom"] > .popover-arrow::after {
+	border-bottom-color: var(--bs-popover-bg);
+}
+
 /* Animations */
+@keyframes autoBackupStatusSpin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.auto-backup-status-spinning {
+	animation: autoBackupStatusSpin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.auto-backup-status-spinning {
+		animation: none;
+	}
+}
+
 @keyframes slideIn {
 	from {
 		opacity: 0;

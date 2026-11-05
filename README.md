@@ -8,7 +8,8 @@ Features:
 - Reorder meals within a day
 - Daily totals of kcal, water, salt
 - Data stored locally (IndexedDB)
-- Backup/restore/erase data
+- Manual backup/restore/erase data
+- Automatic data backup in supported web browsers
 
 ## Credits
 - Icon from [Bootstrap Icons](https://icons.getbootstrap.com/) v1.13.1 ([journal-text](https://icons.getbootstrap.com/icons/journal-text/))
