@@ -1666,6 +1666,7 @@ async function display_search_results(results) {
 		const day = await db.days.get(day_id_num);
 		return day ? { day, meals: grouped_by_day[day_id] } : null;
 	}));
+	days_data.sort((a, b) => new Date(b.day.date) - new Date(a.day.date));
 
 	const fragment = document.createDocumentFragment();
 	for (const item of days_data) {
